@@ -132,7 +132,7 @@ write.table(res_tpm[res_tpm$padj <= 0.1 & res_tpm$Mean_TPM >= 100 & res_tpm$Gene
 
 ################################## Pathway enrichment with enrichR and fGSEA #######################################
 
-## 
+## make lists of protein-coding up- and down-regulated genes (as gene symbols)
 up_symb <- res_tpm[res_tpm$log2FoldChange > 0 & res_tpm$padj <= 0.1 & res_tpm$Gene_type == "protein_coding",]$Symbol
 dn_symb <- res_tpm[res_tpm$log2FoldChange < 0 & res_tpm$padj <= 0.1 & res_tpm$Gene_type == "protein_coding",]$Symbol
 length(up_symb)
@@ -168,7 +168,6 @@ dotplot(enr_up_cp, showCategory = 10,title = "Gene overlap, up-regulated genes v
 dotplot(enr_dn_cp, showCategory = 10,title = "Gene overlap, down-regulated genes vs. MsigDB C2:CP")
 
 ## run similar enrichments using fGSEA
-
 rnk            <- aggregate(stat ~ Symbol,data = res_tpm[res_tpm$Gene_type == "protein_coding",], function(x) ifelse(mean(x)>0,max(x),min(x)))
 rnk            <- setNames(rnk$stat,toupper(rnk$Symbol))
 length(rnk)
@@ -204,16 +203,15 @@ ggplot(gsea_up_cp,aes(x = NES,y = factor(pathway, levels = gsea_up_cp$pathway[or
   geom_point() + scale_color_gradient(low = "blue",high = "red") + 
   xlab("Normalizes enrichment score (NES)") + 
   ylab("MsigDB canonical (CP) pathways") + 
-  ggtitle("GSEA enrichment, up-regulated pathways from MsigDB H") + theme_bw()
+  ggtitle("GSEA enrichment, up-regulated pathways from MsigDB CP") + theme_bw()
 
-ggplot(gsea_up_h,aes(x = NES,y = factor(pathway, levels = gsea_up_h$pathway[order(gsea_up_h$NES)]),size = Overlap,color = -log(padj))) + 
+ggplot(gsea_dn_cp,aes(x = -NES,y = factor(pathway, levels = gsea_dn_cp$pathway[order(-gsea_dn_cp$NES)]),size = Overlap,color = -log(padj))) + 
   geom_point() + scale_color_gradient(low = "blue",high = "red") + 
-  xlab("Normalizes enrichment score (NES)") + 
+  xlab("Negative normalizes enrichment score (-NES)") + 
   ylab("MsigDB canonical (CP) pathways") + 
-  ggtitle("GSEA enrichment, up-regulated pathways from MsigDB H") + theme_bw()
+  ggtitle("GSEA enrichment, down-regulated pathways from MsigDB CP") + theme_bw()
 
 
-################################## Use enrichR to calculate Fisher-based enrichments ########################
 ################################## Put our dataset in the context of other datasets ########################
 
 
