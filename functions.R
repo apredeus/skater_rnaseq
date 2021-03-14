@@ -16,11 +16,12 @@ pca12t = function (exp_table,cond_table,color,labels,title) {
   
   ggplot(pcat_ann, aes(PC1, PC2)) + geom_point(aes(color = pcat_ann[,colnames(pcat_ann) %in% color]),size=3) + 
     geom_text_repel(data=pcat_ann,aes(label=pcat_ann[,colnames(pcat_ann) %in% labels])) +
-    ggtitle(title) + labs(x=xlab,y=ylab) + scale_colour_discrete(name=color) + theme_bw()
+    ggtitle(title) + labs(x=xlab,y=ylab) + scale_color_manual(name=color,values = c("#FFD800","#587058")) + theme_bw() + 
+    theme(panel.grid.major = element_line(size = 0.25))
 }
 
 ### now we make a function to automatically subset, normalize, assess, and do DE on these datasets 
-limma_donor_correct = function(gse,cond,gpl_ann,log2transformed = T,normalized = T) {
+limma_donor_correct = function(gse,cond,gpl_ann,log2transformed = T,normalized = T,plot_title) {
   library(limma)
   library(sva)
   library(ggplot2)
@@ -76,7 +77,8 @@ limma_donor_correct = function(gse,cond,gpl_ann,log2transformed = T,normalized =
   p6 <- ggplot(de.ann,aes(x=AveExpr,y=logFC,color=Sign)) + geom_point(size=0.4) + 
     scale_color_manual(values=c("Not sig" = "#999999", "Up" = "#FF0000", "Dn" = "#0000FF")) + theme_bw() + ggtitle("MA plot, FDR 10% sign cutoff")
   
-  print((p1 + p2)/(p3 + p4)/(p5 + p6))
+  q <- p5 + p6 + plot_layout(widths = c(1, 4))
+  print((p1 + p2)/(p3 + p4)/q + plot_annotation(title = plot_title)) 
   return(de.ann)
 }
 
