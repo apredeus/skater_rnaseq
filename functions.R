@@ -16,7 +16,7 @@ pca12t = function (exp_table,cond_table,color,labels,title) {
   
   ggplot(pcat_ann, aes(PC1, PC2)) + geom_point(aes(color = pcat_ann[,colnames(pcat_ann) %in% color]),size=3) + 
     geom_text_repel(data=pcat_ann,aes(label=pcat_ann[,colnames(pcat_ann) %in% labels])) +
-    ggtitle(title) + labs(x=xlab,y=ylab) + scale_color_manual(name=color,values = c("#FFD800","#587058")) + theme_bw() + 
+    ggtitle(title) + labs(x=xlab,y=ylab) + scale_colour_discrete(name=color) + theme_bw() + 
     theme(panel.grid.major = element_line(size = 0.25))
 }
 

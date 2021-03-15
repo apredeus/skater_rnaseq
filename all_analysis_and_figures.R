@@ -226,7 +226,8 @@ q3 <- ggplot(enr_dn_cp,aes(x = fRatio,y = factor(ID,levels = ID[order(fRatio)]),
 #q3 <- dotplot(enr_dn_cp, showCategory = 10,title = "Gene overlap, down-regulated genes vs. MsigDB C2:CP")
 
 ## run similar enrichments using fGSEA
-rnk            <- aggregate(stat ~ Symbol,data = res_tpm[res_tpm$Gene_type == "protein_coding",], function(x) ifelse(mean(x)>0,max(x),min(x)))
+rnk            <- aggregate(stat ~ Symbol,data = res_tpm[res_tpm$Gene_type == "protein_coding",], 
+                            function(x) ifelse(mean(x)>0,max(x),min(x)))
 rnk            <- setNames(rnk$stat,toupper(rnk$Symbol))
 length(rnk)
 
@@ -260,15 +261,18 @@ gsea_dn_cp$pathway[8] <- "REACTOME RRNA MODIFICATION ..."
 
 
 ## let's plot same enrichments as above but for GSEA
-q4 <- ggplot(gsea_up_h,aes(x = NES,y = factor(pathway, levels = gsea_up_h$pathway[order(gsea_up_h$NES)]),size = Overlap,color = -log(padj))) + 
+q4 <- ggplot(gsea_up_h,aes(x = NES,y = factor(pathway, levels = gsea_up_h$pathway[order(gsea_up_h$NES)]),
+                           size = Overlap,color = -log(padj))) + 
   geom_point() + scale_color_gradient(low = "blue",high = "red") + 
   xlab("Normalized enrichment score (NES)") + 
   ggtitle("GSEA enrichment, up-regulated pathways from MsigDB H") + theme_bw() + theme(plot.title = element_text(hjust = 1))
-q5 <- ggplot(gsea_up_cp,aes(x = NES,y = factor(pathway, levels = gsea_up_cp$pathway[order(gsea_up_cp$NES)]),size = Overlap,color = -log(padj))) + 
+q5 <- ggplot(gsea_up_cp,aes(x = NES,y = factor(pathway, levels = gsea_up_cp$pathway[order(gsea_up_cp$NES)]),
+                            size = Overlap,color = -log(padj))) + 
   geom_point() + scale_color_gradient(low = "blue",high = "red") + 
   xlab("Normalized enrichment score (NES)") + 
   ggtitle("GSEA enrichment, up-regulated pathways from MsigDB CP") + theme_bw() + theme(plot.title = element_text(hjust = 1))
-q6 <- ggplot(gsea_dn_cp,aes(x = -NES,y = factor(pathway, levels = gsea_dn_cp$pathway[order(-gsea_dn_cp$NES)]),size = Overlap,color = -log(padj))) + 
+q6 <- ggplot(gsea_dn_cp,aes(x = -NES,y = factor(pathway, levels = gsea_dn_cp$pathway[order(-gsea_dn_cp$NES)]),
+                            size = Overlap,color = -log(padj))) + 
   geom_point() + scale_color_gradient(low = "blue",high = "red") + 
   xlab("Negative normalized enrichment score (-NES)") + 
   ggtitle("GSEA enrichment, down-regulated pathways from MsigDB CP") + theme_bw() + theme(plot.title = element_text(hjust = 1))
@@ -284,7 +288,7 @@ m2014.gse     <- getGEO("GSE51216",GSEMatrix = T)[[1]] ## GPL6480, log2-tr, norm
 t2013.gse     <- getGEO("GSE46075",GSEMatrix = T)[[1]] ## GPL6244, not log2, normalized
 b2007.gse     <- getGEO("GSE3606",GSEMatrix = T)[[1]] ## GPL571, not log2, normalized
 c2004.gse     <- getGEO("GSE1140",GSEMatrix = T)[[1]] ## GPL96, not log2, normalized
-s2012.gse     <- getGEO("GSE28498",GSEMatrix = T)[[1]] ## GPL6244, not log2, normalized (t2 & t3 have clear batch - probably done separately)
+s2012.gse     <- getGEO("GSE28498",GSEMatrix = T)[[1]] ## GPL6244, not log2, normalized (t2 & t3 have clear batch)
 ra2009a.gse   <- getGEO("GSE14642",GSEMatrix = T)[[1]] ## GPL570, not log2, normalized
 ra2009b.gse   <- getGEO("GSE11761",GSEMatrix = T)[[1]] ## GPL570, not log2, normalized
 n2010.gse     <- getGEO("GSE18966",GSEMatrix = T)[[1]] ## GPL4133, not log2, kind of normalized (?)
@@ -325,7 +329,8 @@ rownames(c2004.cond) <- gsms
 gsms <- c("GSM706084","GSM706085","GSM706086","GSM706087","GSM706088","GSM706089","GSM706090","GSM706091","GSM706092",
           "GSM706093","GSM706094","GSM706095","GSM706096","GSM706097","GSM706098","GSM706099","GSM706100","GSM706101",
           "GSM706102","GSM706103","GSM706104","GSM706105","GSM706106","GSM706107","GSM706108","GSM706109","GSM706110",
-          "GSM706111","GSM706112","GSM706113","GSM706114","GSM706115","GSM706116","GSM706117","GSM706118","GSM706119","GSM706120","GSM706121")
+          "GSM706111","GSM706112","GSM706113","GSM706114","GSM706115","GSM706116","GSM706117","GSM706118","GSM706119",
+          "GSM706120","GSM706121")
 exercise <- c("before","after","before","after","before","after","before","after","before","after","before","after",
               "before","after","before","after","before","after","before","after","before","after","before","after",
               "before","after","before","after","before","after","before","after","before","after","before","after","before","after")
@@ -393,24 +398,11 @@ filt_up <- rnaseq_up[! rnaseq_up$Symbol %in% array_up,]
 rnaseq_dn <- res_tpm[res_tpm$log2FoldChange < 0 & res_tpm$padj <= 0.1,]
 filt_dn <- rnaseq_dn[! rnaseq_dn$Symbol %in% array_dn,]
 
+## These are all the genes that are differentially expressed in RNA-seq 
+## and not detected changing in the same direction in any of the evaluated microarray datasets.
 filtered <- rbind(filt_up,filt_dn)
 write.table(filtered,"Array_filtered_de.tsv",quote = F,row.names = F,sep = "\t")
 
-### now let's make a volcano plot of the filtered ones
-
-filt_label <- subset(filtered, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
-write.table(filt_label,"Array_filtered_protein_tpm10_de.tsv",quote = F,row.names = F,sep = "\t")
-
-ggplot(filtered, aes(x = log2FoldChange, y = -log10(padj))) +
-  geom_point(aes(color = Significant, size = log10(Mean_TPM+1)), stroke = 0) + 
-  geom_text_repel(data = filt_label, aes(label = Symbol), size = 2) + 
-  scale_size_continuous(range = c(0.2,3)) + 
-  scale_x_continuous(limits = c(-2, 2)) + 
-  scale_color_manual(values = c("red", "gray80")) + 
-  xlab("log fold change") + 
-  ylab("-log10 (adjusted p-value)") + 
-  ggtitle("Volcano plot, before vs. after exercise") + theme_bw() + 
-  theme(panel.grid.major = element_line(size = 0.25))
 ################################## PART4. Single-cell RNA-seq datasets used to generate markers ########################
 
 library(Seurat)
@@ -588,14 +580,6 @@ r1 <- ggplot(markers_melt,aes(x=cell,y=value,fill=exercise)) + geom_boxplot() + 
 markers_melt$group <- paste0(markers_melt$cell,markers_melt$gene)
 markers_melt$group <- as.factor(markers_melt$group)
 
-r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() + 
-  geom_boxplot(width = 0.6,position=position_dodge(1)) + 
-  geom_path(position=position_dodge(1),group = markers_melt$group, size = 0.1) + 
-  geom_point(aes(color = exercise), colour="black",pch = 21,position=position_dodge(1), size = 2) + 
-  scale_color_manual(values = c("#587058","#FFD800")) + scale_fill_manual(values = c("#587058","#FFD800")) + 
-  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
-  ylab("Top 20 single cell markers") + xlab("cell type") + ggtitle("Expression changes of top 20 cell type specific markers")
-
 ##   geom_boxplot(width = 0.6,position=position_dodge(1)) + 
 r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() + 
   geom_path(position=position_dodge(1),group = markers_melt$group, size = 0.1) + 
@@ -628,8 +612,48 @@ r4 <- wrap_elements(grid::textGrob('Increased')) + hmap[["neutrophil"]] +
   hmap[["CD14_monocyte"]] + hmap[["platelet"]] + plot_spacer() + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
 
 
-## Patchwork figure 3, 15 x 18
+## Patchwork figure 3, 15 x 18. TODO: sort cells by unchanged/dec/inc. 
 r1/r2/r3/r4
 
+################################## PART6. Annotate and plot more "array-filtered" genes ########################
+
+## This is a logical continuation of PART3, but with blackjack and single cell markers. 
+dim(filtered)
+head(filtered)
+
+### We can make a volcano plot of the filtered genes. It's not super informative though. 
+
+filt_label <- subset(filtered, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
+write.table(filt_label,"Array_filtered_protein_tpm10_de.tsv",quote = F,row.names = F,sep = "\t")
+
+ggplot(filtered, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = significant, size = log10(Mean_TPM+1)), stroke = 0) + 
+  geom_text_repel(data = filt_label, aes(label = Symbol), size = 2) + 
+  scale_size_continuous(range = c(0.2,3)) + 
+  scale_x_continuous(limits = c(-2, 2)) + 
+  scale_color_manual(values = c("red", "gray80")) + 
+  xlab("log fold change") + 
+  ylab("-log10 (adjusted p-value)") + 
+  ggtitle("Volcano plot, before vs. after exercise") + theme_bw() + 
+  theme(panel.grid.major = element_line(size = 0.25))
+
+table(all_top20_markers$cell)
+filt_ann <- filtered
+filt_ann$cell <- "Unknown"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "1",]$gene] <- "CD4_naive_Tcell"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "2",]$gene] <- "CD4_memory_Tcell"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "3",]$gene] <- "CD8_Tcell"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "4",]$gene] <- "natural_killer"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "5",]$gene] <- "Bcell"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "6",]$gene] <- "CD16_monocyte"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "7",]$gene] <- "dendritic_cell"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "8",]$gene] <- "platelet"
+filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "0",]$gene] <- "CD14_monocyte"
 
 
+filt_ann$cell[filt_ann$Symbol %in% wb.markers[wb.markers$cluster == "0",]$gene] <- "erythrocyte"
+filt_ann$cell[filt_ann$Symbol %in% wb.markers[wb.markers$cluster == "6",]$gene] <- "neutrophil"
+table(filt_ann$cell)
+
+filt_label2 <- subset(filt_ann, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
+write.table(filt_label2,"Array_filtered_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
