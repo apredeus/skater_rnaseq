@@ -569,6 +569,7 @@ write.table(all_top20_markers,"Top20_markers_scRNAseq.tsv",quote = F,row.names =
 
 library(pheatmap)
 
+## Let's take expression matrix after donor correction, and find all the defined scRNAseq cell-type specific markers. 
 cbat_select <- top18k_ann[top18k_ann$Symbol %in% all_top20_markers$gene,]
 dim(cbat_select)
 cbat_markers <- merge(all_top20_markers[,7:8],cbat_select,by.x = "gene",by.y = "Symbol")
@@ -576,32 +577,59 @@ cbat_markers$Ensembl <- NULL
 cbat_markers$Gene_type <- NULL
 markers_melt <- melt(cbat_markers)
 markers_melt$exercise <- gsub("\\d","",markers_melt$variable,perl = T)
+markers_melt$exercise <- factor(markers_melt$exercise,levels = c("before","after"))
 markers_melt$variable <- NULL
-ggplot(markers_melt,aes(x=cell,y=value,fill=exercise)) + geom_boxplot()
 
-xx2 <- xx[xx$cell == "neutrophil",c(1,5:18)]
-rownames(xx2) <- xx2$gene
-xx2$gene <- NULL
+## boxplot of all markers, before and after exercise
+r1 <- ggplot(markers_melt,aes(x=cell,y=value,fill=exercise)) + geom_boxplot() + theme_bw() + 
+  scale_fill_manual(values = c("#587058","#FFD800")) + theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
+  ylab("Top 20 single cell markers") + xlab("cell type")
+
+markers_melt$group <- paste0(markers_melt$cell,markers_melt$gene)
+markers_melt$group <- as.factor(markers_melt$group)
+
+r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() + 
+  geom_boxplot(width = 0.6,position=position_dodge(1)) + 
+  geom_path(position=position_dodge(1),group = markers_melt$group, size = 0.1) + 
+  geom_point(aes(color = exercise), colour="black",pch = 21,position=position_dodge(1), size = 2) + 
+  scale_color_manual(values = c("#587058","#FFD800")) + scale_fill_manual(values = c("#587058","#FFD800")) + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
+  ylab("Top 20 single cell markers") + xlab("cell type") + ggtitle("Expression changes of top 20 cell type specific markers")
+
+##   geom_boxplot(width = 0.6,position=position_dodge(1)) + 
+r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() + 
+  geom_path(position=position_dodge(1),group = markers_melt$group, size = 0.1) + 
+  geom_point(aes(color = exercise), colour="black",pch = 21,stroke = 0.2, position=position_dodge(1), size = 2) + 
+  scale_color_manual(values = c("#587058","#FFD800")) + scale_fill_manual(values = c("#587058","#FFD800")) + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
+  ylab("Top 20 single cell markers") + xlab("cell type") + ggtitle("Expression changes of top 20 cell type specific markers")
+
+## Let's now make a heatmap for all markers
+cell_types <- unique(cbat_markers$cell)
+hmap <- list()
 sorted_cond <- cond[order(cond$exercise,decreasing = T),1,drop = F]
-xx3 <- xx2[,rownames(sorted_cond)]
+
+for (i in cell_types) {
+  cat(sprintf("Processing cell type: %s\n",i))
+  marker_exp <- cbat_markers[cbat_markers$cell == i,]
+  rownames(marker_exp) <- marker_exp$gene
+  marker_exp$gene <- NULL
+  marker_exp <- marker_exp[,rownames(sorted_cond)]
+  hmap[[i]] <- as.ggplot(pheatmap(marker_exp,cluster_rows = F,annotation_col = sorted_cond,cluster_cols = F,scale = "row",
+                     labels_col = "", main = i,legend = F,annotation_legend = F,border_color = "white", 
+                     annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
+}
+
+r2 <- wrap_elements(grid::textGrob('Unchanged')) + hmap[["erythrocyte"]] + 
+  hmap[["CD16_monocyte"]] + hmap[["Bcell"]] + hmap[["CD4_memory_Tcell"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
+r3 <- wrap_elements(grid::textGrob('Decreased')) + hmap[["CD4_naive_Tcell"]] + 
+  hmap[["CD8_Tcell"]] + hmap[["natural_killer"]] + hmap[["dendritic_cell"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
+r4 <- wrap_elements(grid::textGrob('Increased')) + hmap[["neutrophil"]] + 
+  hmap[["CD14_monocyte"]] + hmap[["platelet"]] + plot_spacer() + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
 
 
-r1 <- as.ggplot(pheatmap(xx3,cluster_rows = F,annotation_col = sorted_cond,cluster_cols = F,
-                         scale = "row",labels_col = "", main = "TURD",legend = F,annotation_legend = F,border_color = "white",
-                         annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
-r2 <- as.ggplot(pheatmap(xx3,cluster_rows = F, annotation_col = sorted_cond, cluster_cols = F,scale = "row",labels_col = "", main = "BIRD"))
-bb <- ((r1 + r2 + r1 + r2)|(r1 + r2 + r1 + r2)) 
-
-r1 + r2 + plot_layout(guides = "collect") 
-
-& theme(legend.position = 'bottom')
-
-combined <- p1 + p2 & theme(legend.position = "bottom")
-combined + plot_layout(guides = "collect")
-
-pheatmap(data_subset, annotation_row = my_gene_col, annotation_col = my_sample_col)
+## Patchwork figure 3, 15 x 18
+r1/r2/r3/r4
 
 
-data <- read.delim("TagSeqExample.tab", header=T, row.names="gene")
-data_subset <- as.matrix(data[rowSums(data)>50000,])
-pheatmap(data_subset)
+
