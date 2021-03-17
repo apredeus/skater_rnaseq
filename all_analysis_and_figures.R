@@ -621,21 +621,6 @@ r1/r2/r3/r4
 dim(filtered)
 head(filtered)
 
-### We can make a volcano plot of the filtered genes. It's not super informative though. 
-
-filt_label <- subset(filtered, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
-write.table(filt_label,"Array_filtered_protein_tpm10_de.tsv",quote = F,row.names = F,sep = "\t")
-
-ggplot(filtered, aes(x = log2FoldChange, y = -log10(padj))) +
-  geom_point(aes(color = significant, size = log10(Mean_TPM+1)), stroke = 0) + 
-  geom_text_repel(data = filt_label, aes(label = Symbol), size = 2) + 
-  scale_size_continuous(range = c(0.2,3)) + 
-  scale_x_continuous(limits = c(-2, 2)) + 
-  scale_color_manual(values = c("red", "gray80")) + 
-  xlab("log fold change") + 
-  ylab("-log10 (adjusted p-value)") + 
-  ggtitle("Volcano plot, before vs. after exercise") + theme_bw() + 
-  theme(panel.grid.major = element_line(size = 0.25))
 
 table(all_top20_markers$cell)
 filt_ann <- filtered
@@ -654,6 +639,55 @@ filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "0",]$ge
 filt_ann$cell[filt_ann$Symbol %in% wb.markers[wb.markers$cluster == "0",]$gene] <- "erythrocyte"
 filt_ann$cell[filt_ann$Symbol %in% wb.markers[wb.markers$cluster == "6",]$gene] <- "neutrophil"
 table(filt_ann$cell)
+write.table(filt_ann,"Full_filtered_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
 
-filt_label2 <- subset(filt_ann, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
+
 write.table(filt_label2,"Array_filtered_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
+
+filt_label <- subset(filtered, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
+
+
+### We can make a volcano plot of the filtered genes, with all other DE genes in the background. 
+
+res_array <- res_tpm[res_tpm$significant == "FDR < 0.1",]
+res_array$filter <- "array-filtered"
+res_array$filter[res_array$Symbol %in% filtered$Symbol[filtered$regulation == "up"]] <- "up (RNAseq)"
+res_array$filter[res_array$Symbol %in% filtered$Symbol[filtered$regulation == "dn"]] <- "dn (RNAseq)"
+table(res_array$filter)
+
+filt_label2 <- subset(filtered, Mean_TPM > 5)
+filt_label2 <- subset(filt_label2, padj < 1e-4 | abs(log2FoldChange) >= 0.5)
+filt_label3 <- subset(filt_ann, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
+
+
+s1 <- ggplot(res_array, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(data = subset(res_array, filter = "array-filtered"), aes(color = filter, size = log10(Mean_TPM+1)), stroke = 0) + 
+  geom_point(data = subset(res_array, filter != "array-filtered"), aes(color = filter, size = log10(Mean_TPM+1)), stroke = 0) + 
+  geom_text_repel(data = filt_label2, aes(label = Symbol), size = 3) + 
+  scale_size_continuous(range = c(0.2,3)) + 
+  scale_x_continuous(limits = c(-2, 2)) + 
+  scale_color_manual(values = c("array-filtered" = "#E4F6F8", "up (RNAseq)" = "#E86850", "dn (RNAseq)" = "#587498")) + 
+  xlab("log fold change") + 
+  ylab("-log10 (adjusted p-value)") + 
+  ggtitle("Genes uniquely up- and down-regulated in our dataset") + theme_bw() + 
+  theme(panel.grid.major = element_line(size = 0.25))
+
+
+## Now let's make annotated heatmap
+marker_exp <- top18k_ann[top18k_ann$Symbol %in% filt_label3$Symbol,]
+rownames(marker_exp) <- marker_exp$Symbol
+marker_exp[,1:3] <- NULL
+marker_exp <- marker_exp[,rownames(sorted_cond)]
+sorted_rows <- filt_label3[,c(2,12,5,9)]
+rownames(sorted_rows) <- sorted_rows$Symbol
+sorted_rows$Symbol <- NULL
+sorted_rows <- sorted_rows[order(sorted_rows$cell,sorted_rows$log2FoldChange,decreasing = T),]
+marker_exp <- marker_exp[rownames(sorted_rows),]
+
+
+s2 <- as.ggplot(pheatmap(marker_exp,cluster_rows = F,annotation_col = sorted_cond,annotation_row = sorted_rows, 
+                         cluster_cols = F,scale = "row",labels_col = "",main = "Most up-regulated genes by cell type",
+                         legend = F,annotation_legend = T,border_color = "white",
+                         annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
+
+s1 + s2
