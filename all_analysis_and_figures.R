@@ -657,7 +657,10 @@ table(res_array$filter)
 
 filt_label2 <- subset(filtered, Mean_TPM > 5)
 filt_label2 <- subset(filt_label2, padj < 1e-4 | abs(log2FoldChange) >= 0.5)
-filt_label3 <- subset(filt_ann, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
+filt_label2 <- filt_label2[! grepl("-",filt_label2$Symbol),] ## don't want -AS* etc
+
+## select protein coding genes for heatmap vis
+filt_label3 <- subset(filt_ann, Mean_TPM > 10 & abs(log2FoldChange) >= 0.5 & Gene_type == "protein_coding")
 
 
 s1 <- ggplot(res_array, aes(x = log2FoldChange, y = -log10(padj))) +
@@ -666,28 +669,161 @@ s1 <- ggplot(res_array, aes(x = log2FoldChange, y = -log10(padj))) +
   geom_text_repel(data = filt_label2, aes(label = Symbol), size = 3) + 
   scale_size_continuous(range = c(0.2,3)) + 
   scale_x_continuous(limits = c(-2, 2)) + 
-  scale_color_manual(values = c("array-filtered" = "#E4F6F8", "up (RNAseq)" = "#E86850", "dn (RNAseq)" = "#587498")) + 
+  scale_color_manual(values = c("array-filtered" = "#ADD8E6", "up (RNAseq)" = "#E86850", "dn (RNAseq)" = "#587498")) + 
   xlab("log fold change") + 
   ylab("-log10 (adjusted p-value)") + 
-  ggtitle("Genes uniquely up- and down-regulated in our dataset") + theme_bw() + 
+  ggtitle("Genes uniquely up-/down-regulated in our dataset") + theme_bw() + 
   theme(panel.grid.major = element_line(size = 0.25))
 
 
-## Now let's make annotated heatmap
+## Now let's make annotated heatmap. First, get the 72 markers
 marker_exp <- top18k_ann[top18k_ann$Symbol %in% filt_label3$Symbol,]
 rownames(marker_exp) <- marker_exp$Symbol
 marker_exp[,1:3] <- NULL
 marker_exp <- marker_exp[,rownames(sorted_cond)]
+
 sorted_rows <- filt_label3[,c(2,12,5,9)]
 rownames(sorted_rows) <- sorted_rows$Symbol
 sorted_rows$Symbol <- NULL
+
+## Order by cell type and then by log fold change
 sorted_rows <- sorted_rows[order(sorted_rows$cell,sorted_rows$log2FoldChange,decreasing = T),]
 marker_exp <- marker_exp[rownames(sorted_rows),]
 
+## Adjust dataframes a bit more 
+sorted_tpms <- sorted_rows[,3,drop = F]
+sorted_tpms$Symbol <- rownames(sorted_tpms)
+sorted_rows[,2:3] <- NULL
+colnames(sorted_rows) <- "celltype"
 
-s2 <- as.ggplot(pheatmap(marker_exp,cluster_rows = F,annotation_col = sorted_cond,annotation_row = sorted_rows, 
-                         cluster_cols = F,scale = "row",labels_col = "",main = "Most up-regulated genes by cell type",
-                         legend = F,annotation_legend = T,border_color = "white",
+sorted_tpms$Exp <- "TPM > 10"
+sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 50] <- "TPM > 50"
+sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 100] <- "TPM > 100"
+sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 500] <- "TPM > 500"
+
+table(sorted_tpms$Exp)
+sorted_tpms$Exp <- factor(sorted_tpms$Exp,levels = c("TPM > 10","TPM > 50","TPM > 100","TPM > 500"))
+sorted_tpms$Symbol <- factor(sorted_tpms$Symbol,levels = rev(sorted_tpms$Symbol)) 
+
+s2 <- ggplot(sorted_tpms,aes(x = Symbol,y = log10(Mean_TPM),fill = Exp)) + geom_bar(stat = "identity",width = 0.9) + 
+  theme_bw() + coord_flip() + scale_y_continuous(position = "right") + scale_y_reverse() + 
+  scale_fill_manual(values = c("TPM > 10" = "#fef0d9", "TPM > 50" = "#fdcc8a", "TPM > 100" = "#fc8d59","TPM > 500" = "#d7301f")) + 
+  theme(legend.position = "bottom",panel.grid.major.y = element_blank()) + 
+  ggtitle("Array-filtered genes, TPM > 10, |logFC| > 0.5")
+
+s3 <- as.ggplot(pheatmap(marker_exp,cluster_rows = F,annotation_col = sorted_cond,annotation_row = sorted_rows, 
+                   cluster_cols = F,scale = "row",labels_col = "", fontsize_row = 9,
+                   legend = F,annotation_legend = T,border_color = "white", gaps_row = c(27,34,50,56,57,58,59,62,71,72),
+                   annotation_names_row = F, annotation_names_col = F,
+                   annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
+
+## patchwork figure4, 10 x 20 exp
+s23 <- s2 + s3 + plot_layout(widths = c(1,5))
+s1 + s23
+
+################################## PART7. Metabolic network ########################
+
+library(mwcsr)
+library(gatom)
+library(data.table)
+library(igraph)
+
+res_df        <- as.data.frame(res_full)
+res_df$ID     <- rownames(res_df)
+de_gatom      <- res_df[,c(7,6,2,1)]
+colnames(de_gatom) <- c("ID","pval","log2FC","baseMean")
+rownames(de_gatom) <- 1:nrow(de_gatom)
+de_gatom  <- de_gatom[complete.cases(de_gatom),]
+
+load(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/network.rda"))
+load(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Hs.eg.gatom.anno.rda"))
+load(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/met.kegg.db.rda"))
+
+g <- makeAtomGraph(network = network,org.gatom.anno = org.Hs.eg.gatom.anno,
+                   gene.de = de_gatom,met.db = met.kegg.db,met.de = NULL)
+gs1 <- scoreGraph(g, k.gene = 50, k.met = NULL)
+gs2 <- scoreGraph(g, k.gene = 75, k.met = NULL)
+gs3 <- scoreGraph(g, k.gene = 150, k.met = NULL)
+
+vhsolver <- virgo_solver(cplex_dir=NULL)               ## heuristic solver, needs Java 11 (conda install openjdk=11)
+vsolver  <- virgo_solver(cplex_dir="/home/jovyan/bin") ## exact solver
+
+res1 <- solve_mwcsp(vhsolver, gs1)
+res2 <- solve_mwcsp(vhsolver, gs2)
+
+res1a <- solve_mwcsp(vsolver, gs1)
+res2a <- solve_mwcsp(vsolver, gs2)
+
+saveModuleToPdf(res1$graph, file="Skaters_k50.pdf", name="Skaters_k50", n_iter=100, force=1e-5, seed=1)
+saveModuleToPdf(res2$graph, file="Skaters_k75.pdf", name="Skaters_k75", n_iter=100, force=1e-5, seed=1)
+
+saveModuleToPdf(res1a$graph, file="Skaters_k50_opt.pdf", name="Skaters_k50", n_iter=100, force=1e-5, seed=1)
+saveModuleToPdf(res2a$graph, file="Skaters_k75_opt.pdf", name="Skaters_k75", n_iter=100, force=1e-5, seed=1)
+
+res1a.ext <- addHighlyExpressedEdges(res1a$graph, gs1)
+res2a.ext <- addHighlyExpressedEdges(res2a$graph, gs2)
+
+saveModuleToPdf(res1a.ext, file="Skaters_k50_ext.pdf", name="Skaters_k50", n_iter=1000, force=1e-5, seed=1)
+saveModuleToPdf(res2a.ext, file="Skaters_k75_ext.pdf", name="Skaters_k75", n_iter=1000, force=1e-5, seed=1)
+
+save.image(file = "skaters.RData")
+## load("skaters.RData")
+
+#### heatmap of DE transporters 
+
+res_cell <- res_tpm
+res_cell$cell <- "Unknown"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "1",]$gene] <- "CD4_naive_Tcell"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "2",]$gene] <- "CD4_memory_Tcell"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "3",]$gene] <- "CD8_Tcell"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "4",]$gene] <- "natural_killer"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "5",]$gene] <- "Bcell"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "6",]$gene] <- "CD16_monocyte"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "7",]$gene] <- "dendritic_cell"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "8",]$gene] <- "platelet"
+res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "0",]$gene] <- "CD14_monocyte"
+
+
+res_cell$cell[res_cell$Symbol %in% wb.markers[wb.markers$cluster == "0",]$gene] <- "erythrocyte"
+res_cell$cell[res_cell$Symbol %in% wb.markers[wb.markers$cluster == "6",]$gene] <- "neutrophil"
+table(res_cell$cell)
+
+slc_cell <- res_cell[grepl("^SLC",res_cell$Symbol),]
+slc_cell <- slc_cell[slc_cell$padj <= 0.1 & slc_cell$Mean_TPM >= 10,]
+
+slc_exp <- top18k_ann[top18k_ann$Symbol %in% slc_cell$Symbol,]
+rownames(slc_exp) <- slc_exp$Symbol
+slc_exp[,1:3] <- NULL
+slc_exp <- slc_exp[,rownames(sorted_cond)]
+
+slc_rows <- slc_cell[,c(2,12,5,9)]
+rownames(slc_rows) <- slc_rows$Symbol
+slc_rows$Symbol <- NULL
+
+## Order by cell type and then by log fold change
+slc_rows <- slc_rows[order(slc_rows$cell,slc_rows$log2FoldChange,decreasing = T),]
+slc_exp <- slc_exp[rownames(slc_exp),]
+write.table(slc_cell,"SLC_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
+
+## Adjust dataframes a bit more 
+slc_tpms <- slc_rows[,3,drop = F]
+slc_tpms$Symbol <- rownames(slc_tpms)
+slc_tpms[,2:3] <- NULL
+colnames(slc_tpms) <- "celltype"
+
+sorted_tpms$Exp <- "TPM > 10"
+sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 50] <- "TPM > 50"
+sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 100] <- "TPM > 100"
+sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 500] <- "TPM > 500"
+
+table(sorted_tpms$Exp)
+sorted_tpms$Exp <- factor(sorted_tpms$Exp,levels = c("TPM > 10","TPM > 50","TPM > 100","TPM > 500"))
+sorted_tpms$Symbol <- factor(sorted_tpms$Symbol,levels = rev(sorted_tpms$Symbol)) 
+
+
+
+as.ggplot(pheatmap(marker_exp,cluster_rows = F,annotation_col = sorted_cond,annotation_row = sorted_rows, 
+                         cluster_cols = F,scale = "row",labels_col = "", fontsize_row = 9,
+                         legend = F,annotation_legend = T,border_color = "white", gaps_row = c(27,34,50,56,57,58,59,62,71,72),
+                         annotation_names_row = F, annotation_names_col = F,
                          annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
-
-s1 + s2
