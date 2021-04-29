@@ -1,0 +1,15 @@
+sample	exercise	donor
+1after	after	d1
+1before	before	d1
+2after	after	d2
+2before	before	d2
+3after	after	d3
+3before	before	d3
+4after	after	d4
+4before	before	d4
+5after	after	d5
+5before	before	d5
+6after	after	d6
+6before	before	d6
+7after	after	d7
+7before	before	d7
