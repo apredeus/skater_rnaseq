@@ -909,6 +909,38 @@ ggplot(enrich_melt, aes(x=cell, y=pct, fill=variable)) +
   geom_bar(stat='identity', col='black') +
   theme_bw() + scale_fill_npg() + coord_flip()
 
+circle_enrich <- reshape2::melt(marker_enrich, id.vars=c('cell'),
+    measure.vars=c('deg_markers', 'uq_deg_markers', 'high_uq_deg_markers'))
+circle_enrich$pct <- circle_enrich$value/c(marker_enrich$total_markers, 
+            marker_enrich$deg_markers, marker_enrich$high_deg_markers) * 100
+circle_enrich$pvalue = -log10(c(marker_enrich$deg_vs_all, 
+                                marker_enrich$uq_vs_deg,
+                                marker_enrich$uq_high_vs_all_high))
+
+circle_enrich$significance = factor(ifelse(circle_enrich$pvalue > 5, "p < 1e-5",
+                  ifelse(circle_enrich$pvalue > 3, "p < 0.001", "p > 0.001")),
+                  levels = c("p > 0.001", "p < 0.001", "p < 1e-5"))
+
+head(circle_enrich)
+circle_plot <- ggplot(circle_enrich, aes(x=cell, y=variable, size=pct)) + 
+  geom_point(aes(fill=pvalue), pch=21, col='black') + 
+  scale_fill_gradientn(colours=white_red_colors) +
+  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1),
+                     legend.position='bottom')
+
+
+circle_plot <- ggplot(circle_enrich, aes(x=cell, y=variable, size=pct)) + 
+  geom_point(aes(fill=significance), pch=21, col='black') + 
+  scale_fill_manual(values=c("#fef0d9", "#fc8d59", "#d7301f")) +
+  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1))
+
+print(circle_plot)
+
+circle_plot_count <- ggplot(circle_enrich, aes(x=cell, y=variable, size=value)) + 
+  geom_point(aes(fill=pvalue), pch=21, col='black') + 
+  scale_fill_gradientn(colours=white_red_colors) +
+  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1))
+
 # Enrichment complex heatmap
 enrich_matrix <- -log10(as.matrix(marker_enrich[, 8:9]))
 rownames(enrich_matrix) = marker_enrich$cell
@@ -944,11 +976,16 @@ cairo_pdf('Figure_4_revamp2.pdf', width=21, height=15)
 plot_grid(top, bottom, nrow=2, rel_heights = c(1, 0.6))
 dev.off()
 
-first_2col <- plot_grid(s1, as.ggplot(s4_ch), ncol=1, rel_heights=c(1, 0.6))
-cairo_pdf('Figure_4_revamp3.pdf', width=21, height=15)
+first_2col <- plot_grid(s1, as.ggplot(s4_ch), ncol=1, rel_heights=c(1, 0.8))
+cairo_pdf('Figure_4_revamp3.pdf', width=21, height=13)
 plot_grid(first_2col, s3_ch, nrow=1, rel_widths = c(1.1, 1))
 dev.off()
-#########
+
+second_2col <- plot_grid(s1, circle_plot, ncol=1, rel_heights=c(1, 0.36))
+cairo_pdf('Figure_4_revamp4.pdf', width=21, height=11.4)
+plot_grid(second_2col, s3_ch, nrow=1, rel_widths = c(1.1, 1))
+dev.off()
+
 
 ######################### PART7. Metabolic network ########################
 
