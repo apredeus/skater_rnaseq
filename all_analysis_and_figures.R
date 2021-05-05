@@ -622,12 +622,51 @@ markers_melt$exercise <- gsub("\\d","",markers_melt$variable,perl = T)
 markers_melt$exercise <- factor(markers_melt$exercise,levels = c("before","after"))
 markers_melt$variable <- NULL
 
+markers_melt$cell = factor(markers_melt$cell, levels=c('erythrocyte',
+        'CD14_monocyte', 'neutrophil', 'platelet', 'CD4_memory_Tcell',
+        'CD8_Tcell', 'Bcell', 'natural_killer', 'plasmacytoid_dendritic',
+        'CD4_naive_Tcell', 'CD16_monocyte', 'myeloid_dendritic'))
+
+stat_data <- data.frame(cell=levels(markers_melt$cell),
+                        wilcox_down=NA, wilcox_up=NA,
+                        cell_index=1:12)
+rownames(stat_data) = stat_data$cell
+
+# Statistical comparison using paired Wilcoxon criterion
+for (cell in unique(markers_melt$cell)) {
+  expr_cell <- aggregate(value~gene+exercise, 
+                         markers_melt[as.character(markers_melt$cell) ==
+                                        as.character(cell), ], median)
+  stat_data[cell, 'wilcox_down'] = wilcox.test(value~exercise, expr_cell, paired=T, alternative="greater")$p.value
+  stat_data[cell, 'wilcox_up'] = wilcox.test(value~exercise, expr_cell, paired=T, alternative="less")$p.value
+  print(paste0(cell, 
+               " - p (down) = ", 
+               wilcox.test(value~exercise, expr_cell, paired=T, alternative="greater")$p.value,
+               ", p (up) = ", 
+               wilcox.test(value~exercise, expr_cell, paired=T, alternative="less")$p.value))
+}
+
+stat_data$annotation = ifelse(stat_data$wilcox_up < 0.001 | stat_data$wilcox_down < 0.001, 
+                              "***", ifelse(stat_data$wilcox_up < 0.01 | stat_data$wilcox_down < 0.01,
+                                            "**", "-"))
+
+library(ggsignif)
+stat_data$x_start = stat_data$cell_index - 0.25
+stat_data$x_end = stat_data$cell_index + 0.25
+stat_data$y = 18
+
 ## boxplot of all markers, before and after exercise
-r1_box <- ggplot(markers_melt,aes(x=cell,y=value,fill=exercise)) + geom_violin() + 
-  geom_boxplot(width=0.4, outlier.shape=NA, position=position_dodge(width=0.9)) +
+r1_box <- ggplot(markers_melt,aes(x=cell,y=value)) + 
+  geom_violin(aes(fill=exercise), scale='width') + 
+  geom_signif(stat="identity", 
+              data=stat_data, 
+              aes(x=x_start, xend=x_end, 
+                  y=y, yend=y, annotation=annotation, group=cell_index)) +
+  geom_boxplot(aes(fill=exercise), width=0.2, outlier.shape=NA, position=position_dodge(width=0.9)) +
   theme_bw() + scale_fill_manual(values = c("#587058","#FFD800")) + 
   theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
-  ylab("Top 20 single cell markers") + xlab("cell type")
+  ylab("Top 20 single cell markers") + xlab("cell type") +
+  scale_y_continuous(limits=c(0, 20))
 r1_box
 
 markers_melt$group <- paste0(markers_melt$cell,markers_melt$gene)
@@ -643,17 +682,7 @@ r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() 
 
 
 
-# Statistical comparison using paired Wilcoxon criterion
-for (cell in unique(markers_melt$cell)) {
-  expr_cell <- aggregate(value~gene+exercise, 
-                         markers_melt[as.character(markers_melt$cell) ==
-                              as.character(cell), ], median)
-  print(paste0(cell, 
-        " - p (down) = ", 
-        wilcox.test(value~exercise, expr_cell, paired=T, alternative="greater")$p.value,
-        ", p (up) = ", 
-        wilcox.test(value~exercise, expr_cell, paired=T, alternative="less")$p.value))
-}
+
 
 ## Let's now make a heatmap for all markers
 cell_types <- unique(cbat_markers$cell)
@@ -671,23 +700,25 @@ for (i in cell_types) {
                      annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
 }
 
-r2 <- wrap_elements(grid::textGrob('Unchanged')) + hmap[["CD4_naive_Tcell"]] + 
-  hmap[["CD16_monocyte"]] + hmap[["myeloid_dendritic"]] + plot_spacer() + plot_spacer() + plot_layout(ncol = 6, widths = c(1,3,3,3,3,3))
+r2 <- wrap_elements(grid::textGrob('Increased')) + hmap[["erythrocyte"]] + 
+  hmap[["CD14_monocyte"]] + hmap[["neutrophil"]] + hmap[['platelet']] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
 r3 <- wrap_elements(grid::textGrob('Decreased')) + hmap[["CD4_memory_Tcell"]] + 
-  hmap[["CD8_Tcell"]] + hmap[["natural_killer"]] + hmap[["Bcell"]] + hmap[["plasmacytoid_dendritic"]] + plot_layout(ncol = 6, widths = c(1,3,3,3,3,3))
-r4 <- wrap_elements(grid::textGrob('Increased')) + hmap[["neutrophil"]] + 
-  hmap[["CD14_monocyte"]] + hmap[["platelet"]] + hmap[['erythrocyte']] + plot_spacer() + plot_layout(ncol = 6, widths = c(1,3,3,3,3,3))
+  hmap[["CD8_Tcell"]] + hmap[["Bcell"]] + hmap[["natural_killer"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
+r4 <- wrap_elements(grid::textGrob('Unchanged')) + hmap[["CD4_naive_Tcell"]] + 
+  hmap[["CD16_monocyte"]] + hmap[["myeloid_dendritic"]] + hmap[["plasmacytoid_dendritic"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
 
 
-##   geom_boxplot(width = 0.6,position=position_dodge(1)) + 
-cairo_pdf('Figure_3_revamp.pdf', width=18, height=15)
 r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() + 
   geom_path(position=position_dodge(1),group = markers_melt$group, size = 0.1) + 
   geom_point(aes(color = exercise), colour="black",pch = 21,stroke = 0.2, position=position_dodge(1), size = 2) + 
   scale_color_manual(values = c("#587058","#FFD800")) + scale_fill_manual(values = c("#587058","#FFD800")) + 
   theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
   ylab("Top 20 single cell markers") + xlab("cell type") + ggtitle("Expression changes of top 20 cell type specific markers")
-plot_grid(r1_box, r2, r4, r3, nrow=4, rel_heights = c(1, 0.8, 0.8, 0.8))
+
+
+##   geom_boxplot(width = 0.6,position=position_dodge(1)) + 
+cairo_pdf('Figure_3_revamp.pdf', width=18, height=15)
+plot_grid(r1_box, r2, r3, r4, nrow=4, rel_heights = c(1, 0.8, 0.8, 0.8))
 dev.off()
 
 ## Patchwork figure 3, 15 x 18. TODO: sort cells by unchanged/dec/inc. 
@@ -922,17 +953,19 @@ circle_enrich$significance = factor(ifelse(circle_enrich$pvalue > 5, "p < 1e-5",
                   levels = c("p > 0.001", "p < 0.001", "p < 1e-5"))
 
 head(circle_enrich)
-circle_plot <- ggplot(circle_enrich, aes(x=cell, y=variable, size=pct)) + 
-  geom_point(aes(fill=pvalue), pch=21, col='black') + 
-  scale_fill_gradientn(colours=white_red_colors) +
-  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1),
-                     legend.position='bottom')
+#circle_plot <- ggplot(circle_enrich, aes(x=cell, y=variable, size=pct)) + 
+#  geom_point(aes(fill=pvalue), pch=21, col='black') + 
+#  scale_fill_gradientn(colours=white_red_colors) +
+#  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1),
+#                     legend.position='bottom')
 
 
 circle_plot <- ggplot(circle_enrich, aes(x=cell, y=variable, size=pct)) + 
   geom_point(aes(fill=significance), pch=21, col='black') + 
   scale_fill_manual(values=c("#fef0d9", "#fc8d59", "#d7301f")) +
-  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1))
+  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1),
+                     panel.grid=element_blank(),
+                     plot.margin = margin(0.6, 2, 0.6, 0.2, "cm"))
 
 print(circle_plot)
 
