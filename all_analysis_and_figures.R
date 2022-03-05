@@ -20,6 +20,7 @@ library(clusterProfiler)
 library(enrichplot)
 library(patchwork)
 library(ggplotify)
+library(cowplot)
 
 
 setwd("~/tmp")
@@ -183,13 +184,23 @@ c7_t2g <- c7_t2g[,c(2,1)]
 
 ## calculate and plot enrichments using clusterProfiler 
 universe <- res_ann[res_ann$Gene_type == "protein_coding",]$Symbol
-enr_up_h <- enricher(gene = up_symb, TERM2GENE = h_t2g)
-enr_dn_h <- enricher(gene = dn_symb, TERM2GENE = h_t2g, universe = res_ann$Symbol)
-enr_up_cp <- enricher(gene = up_symb, TERM2GENE = cp_t2g, universe = universe)
-enr_dn_cp <- enricher(gene = dn_symb, TERM2GENE = cp_t2g, universe = universe)
+enr_up_h  <- enricher(gene = up_symb, TERM2GENE = h_t2g, qvalueCutoff = 1, pvalueCutoff = 1)
+enr_dn_h  <- enricher(gene = dn_symb, TERM2GENE = h_t2g, qvalueCutoff = 1, pvalueCutoff = 1)
+enr_up_cp <- enricher(gene = up_symb, TERM2GENE = cp_t2g, qvalueCutoff = 1, pvalueCutoff = 1)
+enr_dn_cp <- enricher(gene = dn_symb, TERM2GENE = cp_t2g, qvalueCutoff = 1, pvalueCutoff = 1)
+enr_up_c7 <- enricher(gene = up_symb, TERM2GENE = c7_t2g, qvalueCutoff = 1, pvalueCutoff = 1)
+enr_dn_c7 <- enricher(gene = dn_symb, TERM2GENE = c7_t2g, qvalueCutoff = 1, pvalueCutoff = 1)
+
+all_enr_h  <- rbind(as.data.frame(enr_up_h),as.data.frame(enr_dn_h))
+all_enr_cp <- rbind(as.data.frame(enr_up_cp),as.data.frame(enr_dn_cp))
+all_enr_c7 <- rbind(as.data.frame(enr_up_c7),as.data.frame(enr_dn_c7))
+
+write.table(all_enr_h,"all_enr_hallmark.tsv",quote = F,sep = "\t",row.names = F)
+write.table(all_enr_cp,"all_enr_canonical.tsv",quote = F,sep = "\t",row.names = F)
+write.table(all_enr_c7,"all_enr_immune.tsv",quote = F,sep = "\t",row.names = F)
 
 enr_up_h <- as.data.frame(enr_up_h)
-enr_up_h <- enr_up_h[1:10,]
+enr_up_h <- enr_up_h[1:10,] ## sorted by adjusted p-value
 enr_up_h$fRatio <- sapply(enr_up_h$GeneRatio, function(x) eval(parse(text = x)))
 colnames(enr_up_h)[9] <- "Overlap"
 enr_up_h$ID <- gsub("_"," ",enr_up_h$ID)
@@ -221,10 +232,6 @@ q3 <- ggplot(enr_dn_cp,aes(x = fRatio,y = factor(ID,levels = ID[order(fRatio)]),
   xlab("Gene ratio") + 
   ggtitle("Gene overlap, down-regulated genes vs. MsigDB C2:CP") + theme_bw() + theme(plot.title = element_text(hjust = 1))
 
-#q1 <- dotplot(enr_up_h, showCategory = 10, title = "Gene overlap, up-regulated genes vs. MsigDB H")
-#q2 <- dotplot(enr_up_cp, showCategory = 10,title = "Gene overlap, up-regulated genes vs. MsigDB C2:CP")
-#q3 <- dotplot(enr_dn_cp, showCategory = 10,title = "Gene overlap, down-regulated genes vs. MsigDB C2:CP")
-
 ## run similar enrichments using fGSEA
 rnk            <- aggregate(stat ~ Symbol,data = res_tpm[res_tpm$Gene_type == "protein_coding",], 
                             function(x) ifelse(mean(x)>0,max(x),min(x)))
@@ -233,6 +240,15 @@ length(rnk)
 
 gsea.h         <- fgsea(h.all,rnk,minSize = 10,maxSize = 500,eps = 0.0,nproc = 4)
 gsea.cp        <- fgsea(c2.cp,rnk,minSize = 10,maxSize = 500,eps = 0.0,nproc = 4)
+gsea.c7        <- fgsea(c7.all,rnk,minSize = 10,maxSize = 500,eps = 0.0,nproc = 4)
+
+gsea.h$leadingEdge    <- vapply(gsea.h$leadingEdge, paste, collapse = ",", character(1L))
+gsea.cp$leadingEdge   <- vapply(gsea.cp$leadingEdge, paste, collapse = ",", character(1L))
+gsea.c7$leadingEdge   <- vapply(gsea.c7$leadingEdge, paste, collapse = ",", character(1L))
+
+write.table(gsea.h,"all_fgsea_hallmark.tsv",quote = F,sep = "\t",row.names = F)
+write.table(gsea.cp,"all_fgsea_canonical.tsv",quote = F,sep = "\t",row.names = F)
+write.table(gsea.c7,"all_fgsea_immune.tsv",quote = F,sep = "\t",row.names = F)
 
 gsea_up_h <- gsea.h[gsea.h$NES > 0 & gsea.h$padj < 0.05,]
 gsea_up_h <- gsea_up_h[order(gsea_up_h$padj),]
@@ -247,7 +263,7 @@ gsea_up_cp <- gsea_up_cp[order(gsea_up_cp$padj),]
 gsea_up_cp <- gsea_up_cp[1:10,]
 gsea_up_cp$Overlap <- lengths(gsea_up_cp$leadingEdge)
 gsea_up_cp$pathway <- gsub("_"," ",gsea_up_cp$pathway)
-gsea_up_cp$pathway[8] <- "REACTOME DISEASES OF SIGNAL ..."
+gsea_up_cp$pathway[9] <- "REACTOME DISEASES OF SIGNAL ..."
 gsea_up_cp$pathway[3] <- "REACTOME PLATELET ACTIVATION ..."
 
 
@@ -280,8 +296,10 @@ q6 <- ggplot(gsea_dn_cp,aes(x = -NES,y = factor(pathway, levels = gsea_dn_cp$pat
 ## patchwork figure 2; export 8 x 20 pdf
 (q1 + q2 + q3)/(q4 + q5 + q6) & theme(axis.title.y = element_blank(),plot.margin = margin(30, 30, 30, 30))
 
-################################## PART3. Puting our dataset in the context of other (microarray) datasets ########################
+plot_grid(q1, q2, q3, q4, q5, q6, nrow=2)
 
+
+################################## PART3. Puting our dataset in the context of other (microarray) datasets ########################
 
 ## use GEOquery package to get the selected datasets
 m2014.gse     <- getGEO("GSE51216",GSEMatrix = T)[[1]] ## GPL6480, log2-tr, normalized
@@ -409,6 +427,7 @@ library(Seurat)
 library(ggplot2)
 library(dplyr)
 library(DropletUtils)
+library(hdf5r)
 
 ## Very few datasets have erythrocytes and/or whole blood. We'll use this one:
 ## this is dataset https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE149938
@@ -459,14 +478,14 @@ FeaturePlot(wb,c("HBA1","HBA2","HBB","HBD"))
 
 wb.markers <- FindAllMarkers(wb, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
 
-ery <- wb.markers[wb.markers$cluster == "0",]
-ery <- ery[! grepl("^HB",ery$gene),] ## lose the globins since we depleted them
-ery$cell <- "erythrocyte"
-ery <- ery[1:20,]
+#ery <- wb.markers[wb.markers$cluster == "0",]
+#ery <- ery[! grepl("^HB",ery$gene),] ## lose the globins since we depleted them
+#ery$cell <- "erythrocyte"
+#ery <- ery[1:20,]
 
-neutro <- wb.markers[wb.markers$cluster == "6",]
-neutro$cell <- "neutrophil"
-neutro <- neutro[1:20,]
+#neutro <- wb.markers[wb.markers$cluster == "6",]
+#neutro$cell <- "neutrophil"
+#neutro <- neutro[1:20,]
 
 ### Let's process 10X PBMC10k dataset the same way and get all other markers 
 download.file("https://cf.10xgenomics.com/samples/cell-exp/4.0.0/Parent_NGSC3_DI_PBMC/Parent_NGSC3_DI_PBMC_filtered_feature_bc_matrix.h5",
@@ -475,7 +494,7 @@ filt.matrix <- Read10X_h5("pbmc10k_filt.h5",use.names = T)
 pbmc        <- CreateSeuratObject(counts = filt.matrix)
 pbmc[["percent.mt"]] <- PercentageFeatureSet(pbmc, pattern = "^MT-")
 VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
-pbmc <- subset(pbmc, subset = nFeature_RNA > 500 & nFeature_RNA < 4000 & percent.mt < 15) ## crude filtering for doublets
+pbmc <- subset(pbmc, subset = nFeature_RNA > 1000 & nFeature_RNA < 5000 & percent.mt < 15) ## crude filtering for doublets
 VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 
 pbmc    <- NormalizeData(pbmc)
@@ -485,97 +504,200 @@ pbmc <- ScaleData(pbmc, features = all.genes)
 
 ## Again, we want courser clustering - overall B/T/Monocyte/NK/platelet 
 pbmc <- RunPCA(pbmc, features = VariableFeatures(object = pbmc))
-pbmc <- RunUMAP(pbmc, dims = 1:10)
-pbmc <- FindNeighbors(pbmc, dims = 1:10)
+pbmc <- RunUMAP(pbmc, dims = 1:15)
+pbmc <- FindNeighbors(pbmc, dims = 1:15, k.param = 15)
 pbmc <- FindClusters(pbmc, resolution = 0.2)
 
 DimPlot(pbmc,label.size = 6,repel = T,label = T)
 FeaturePlot(pbmc,c("LILRA4"))
+FeaturePlot(pbmc,c("FCER1A"))
 FeaturePlot(pbmc,c("PPBP")) ## got to split clusters, these are DCs and platelets together
+FeaturePlot(pbmc,c("NKG7"))
 
 plat_barcodes <- colnames(subset(x = pbmc, subset = PPBP > 2))
+#miel_barcodes <- colnames(subset(x = pbmc, subset = FCER1A > 2))
 pbmc@meta.data$seurat_clusters <- as.character(pbmc@meta.data$seurat_clusters)
-pbmc@meta.data$seurat_clusters[rownames(pbmc@meta.data) %in% plat_barcodes] <- '8'
+pbmc@meta.data$seurat_clusters[pbmc@meta.data$seurat_cluster == '7'] <- '5'
+pbmc@meta.data$seurat_clusters[rownames(pbmc@meta.data) %in% plat_barcodes] <- '7'
+#pbmc@meta.data$seurat_clusters[rownames(pbmc@meta.data) %in% miel_barcodes] <- '9'
 table(pbmc@meta.data$seurat_clusters)
 pbmc@meta.data$seurat_clusters <- as.factor(pbmc@meta.data$seurat_clusters)
 pbmc <- SetIdent(pbmc, value = "seurat_clusters")
 DimPlot(pbmc,label.size = 6,repel = T,label = T)
 
-## Now we're ready to define the markers for 8 populations. Cluster identification can be done using 
+## Now we're ready to define the markers for 10 populations of interest. Cluster identification can be done using 
 ## markers listed in Seurat vignette: https://satijalab.org/seurat/articles/pbmc3k_tutorial.html
 pbmc.markers <- FindAllMarkers(pbmc, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
 pbmc.markers <- pbmc.markers[! grepl("^RP[SL]",pbmc.markers$gene),]
 pbmc.markers <- pbmc.markers[! grepl("\\.",pbmc.markers$gene),]
 pbmc.markers <- pbmc.markers[! grepl("^LINC",pbmc.markers$gene),]
+# Examine the number of clusters per marker - expecting one cluster per gene
+table(table(pbmc.markers$gene))
 
-cd14_mono <- pbmc.markers[pbmc.markers$cluster == "0",]
-cd14_mono$cell <- "CD14_monocyte"
+# Exploring known markers
+FeaturePlot(pbmc,c("CD14"))
+FeaturePlot(pbmc,c("IL7R"))
+FeaturePlot(pbmc,c("GATA3"))
+FeaturePlot(pbmc,c("CD8A"))
+FeaturePlot(pbmc,c("IGLC2"))
+FeaturePlot(pbmc,c("TCF7L2"))
+FeaturePlot(pbmc,c("GZMH"))
+DimPlot(pbmc,label.size = 6,repel = T,label = T)
+
+# Combine WB and pbmc
+wb.markers$dataset = 'wb'
+pbmc.markers$dataset = 'pbmc'
+all.markers = rbind(wb.markers[wb.markers$cluster %in% c('0', '6'), ], 
+                    pbmc.markers)
+table(all.markers$cluster)
+all.markers$cluster = ifelse(all.markers$dataset == 'wb',
+                  ifelse(all.markers$cluster == '0', '10', '11'),
+                  as.character(all.markers$cluster))
+table(all.markers$cluster)
+head(all.markers)
+table(table(all.markers$gene))
+all.uq.markers = all.markers[all.markers$gene %in% names(table(all.markers$gene))[table(all.markers$gene) == 1], ]
+table(all.uq.markers$cluster)
+
+## let's assign cell types to each cluster 
+all.uq.markers$cell <- "NA"
+all.uq.markers[all.uq.markers$cluster == "0",]$cell <- "CD14_monocyte"
+all.uq.markers[all.uq.markers$cluster == "1",]$cell <- "CD4_naive_Tcell"
+all.uq.markers[all.uq.markers$cluster == "2",]$cell <- "CD4_memory_Tcell"
+all.uq.markers[all.uq.markers$cluster == "3",]$cell <- "CD8_Tcell"
+all.uq.markers[all.uq.markers$cluster == "4",]$cell <- "Bcell"
+all.uq.markers[all.uq.markers$cluster == "5",]$cell <- "natural_killer"
+all.uq.markers[all.uq.markers$cluster == "6",]$cell <- "CD16_monocyte"
+all.uq.markers[all.uq.markers$cluster == "7",]$cell <- "platelet"
+all.uq.markers[all.uq.markers$cluster == "8",]$cell <- "plasmacytoid_dendritic"
+all.uq.markers[all.uq.markers$cluster == "9",]$cell <- "myeloid_dendritic"
+all.uq.markers[all.uq.markers$cluster == "10",]$cell <- "erythrocyte"
+all.uq.markers[all.uq.markers$cluster == "11",]$cell <- "neutrophil"
+table(all.uq.markers$cell)
+
+## replace some of the outdated gene names 
+## there's a bug in UpdateSymbolList that causes good gene names to be replaced with a wrong symbol
+all.uq.markers$new_gene <- Seurat::UpdateSymbolList(all.uq.markers$gene)
+all.uq.markers$symbol <- ifelse(all.uq.markers$gene %in% res_ann$Symbol, all.uq.markers$gene, all.uq.markers$new_gene)
+all.uq.markers$new_gene <- NULL
+
+write.table(all.uq.markers,"all_scrna_markers.tsv",quote = F,sep = "\t",row.names = F)
+
+## select top 20 markers for each cell type; get rid of globin genes since we depleted them in bulk RNA-seq
+
+cd14_mono <- all.uq.markers[all.uq.markers$cluster == "0",]
 cd14_mono <- cd14_mono[1:20,]
 
-cd4_naive <- pbmc.markers[pbmc.markers$cluster == "1",]
-cd4_naive$cell <- "CD4_naive_Tcell"
+cd4_naive <- all.uq.markers[all.uq.markers$cluster == "1",]
 cd4_naive <- cd4_naive[1:20,]
 
-cd4_memory <- pbmc.markers[pbmc.markers$cluster == "2",]
-cd4_memory$cell <- "CD4_memory_Tcell"
+cd4_memory <- all.uq.markers[all.uq.markers$cluster == "2",]
 cd4_memory <- cd4_memory[1:20,]
 
-cd8_tcell <- pbmc.markers[pbmc.markers$cluster == "3",]
-cd8_tcell$cell <- "CD8_Tcell"
+cd8_tcell <- all.uq.markers[all.uq.markers$cluster == "3",]
 cd8_tcell <- cd8_tcell[1:20,]
 
-nk <- pbmc.markers[pbmc.markers$cluster == "4",]
-nk$cell <- "natural_killer"
-nk <- nk[1:20,]
-
-bcell <- pbmc.markers[pbmc.markers$cluster == "5",]
-bcell$cell <- "Bcell"
+bcell <- all.uq.markers[all.uq.markers$cluster == "4",]
 bcell <- bcell[1:20,]
 
-cd16_mono <- pbmc.markers[pbmc.markers$cluster == "6",]
-cd16_mono$cell <- "CD16_monocyte"
+nk <- all.uq.markers[all.uq.markers$cluster == "5",]
+nk <- nk[1:20,]
+
+cd16_mono <- all.uq.markers[all.uq.markers$cluster == "6",]
 cd16_mono <- cd16_mono[1:20,]
 
-dc <- pbmc.markers[pbmc.markers$cluster == "7",]
-dc$cell <- "dendritic_cell"
-dc <- dc[1:20,]
-
-plat <- pbmc.markers[pbmc.markers$cluster == "8",]
-plat$cell <- "platelet"
+plat <- all.uq.markers[all.uq.markers$cluster == "7",]
 plat <- plat[1:20,]
 
-all_top20_markers <- rbind(ery,neutro,cd14_mono,cd16_mono,cd4_naive,cd4_memory,cd8_tcell,nk,bcell,dc,plat)
-## replace some of the outdated gene names 
-all_top20_markers$gene[! all_top20_markers$gene %in% res_ann$Symbol]
-## "FAM101B" -> "RFLNB"; "CAVIN2" -> "SDPR"
-all_top20_markers$gene[all_top20_markers$gene == "FAM101B"] <- "RFLNB"
-all_top20_markers$gene[all_top20_markers$gene == "CAVIN2"]  <- "SDPR"
+pldc <- all.uq.markers[all.uq.markers$cluster == "8",]
+pldc <- pldc[1:20,]
+
+mydc <- all.uq.markers[all.uq.markers$cluster == "9",]
+mydc <- mydc[1:20,]
+
+ery <- all.uq.markers[all.uq.markers$cluster == "10",]
+ery <- ery[! grepl("^HB",ery$gene),] 
+ery <- ery[1:20,]
+
+neutro <- all.uq.markers[all.uq.markers$cluster == "11",]
+neutro <- neutro[1:20,]
+
+all_top20_markers <- rbind(ery,neutro,cd14_mono,cd16_mono,cd4_naive,cd4_memory,cd8_tcell,nk,bcell,mydc,pldc,plat)
+all_top20_markers$symbol[! all_top20_markers$symbol %in% res_ann$Symbol]
+
+## several gene symbols need to be changed to match Gencode v29/our bulk data
+## "CAVIN2" -> "SDPR"; "GASK1B" -> "FAM198B"; "ARMH1" -> "C1orf228"; "PHETA1" -> "FAM109A"
+all_top20_markers$symbol[all_top20_markers$symbol == "GASK1B"] <- "FAM198B"
+all_top20_markers$symbol[all_top20_markers$symbol == "CAVIN2"] <- "SDPR"
+all_top20_markers$symbol[all_top20_markers$symbol == "ARMH1"]  <- "C1orf228"
+all_top20_markers$symbol[all_top20_markers$symbol == "PHETA1"] <- "FAM109A"
 
 ## make the table of markers used
-write.table(all_top20_markers,"Top20_markers_scRNAseq.tsv",quote = F,row.names = F,sep = "\t")
-
-### now, let's make a 
+write.table(all_top20_markers,"top20_scrna_markers.tsv",quote = F,row.names = F,sep = "\t")
 
 
 ################################## PART5. Identify changes of cell populations in bulk RNA-seq ########################
 
 library(pheatmap)
+library(ComplexHeatmap)
 
 ## Let's take expression matrix after donor correction, and find all the defined scRNAseq cell-type specific markers. 
-cbat_select <- top18k_ann[top18k_ann$Symbol %in% all_top20_markers$gene,]
+cbat_select <- top18k_ann[top18k_ann$Symbol %in% all_top20_markers$symbol,]
 dim(cbat_select)
-cbat_markers <- merge(all_top20_markers[,7:8],cbat_select,by.x = "gene",by.y = "Symbol")
+cbat_markers <- merge(all_top20_markers[,c(7,9)],cbat_select,by.x = "gene",by.y = "Symbol")
 cbat_markers$Ensembl <- NULL
 cbat_markers$Gene_type <- NULL
-markers_melt <- melt(cbat_markers)
+markers_melt <- reshape2::melt(cbat_markers)
 markers_melt$exercise <- gsub("\\d","",markers_melt$variable,perl = T)
 markers_melt$exercise <- factor(markers_melt$exercise,levels = c("before","after"))
 markers_melt$variable <- NULL
 
+markers_melt$cell = factor(markers_melt$cell, levels=c('erythrocyte',
+        'CD14_monocyte', 'neutrophil', 'platelet', 'CD4_memory_Tcell',
+        'CD8_Tcell', 'Bcell', 'natural_killer', 'plasmacytoid_dendritic',
+        'CD4_naive_Tcell', 'CD16_monocyte', 'myeloid_dendritic'))
+
+stat_data <- data.frame(cell=levels(markers_melt$cell),
+                        wilcox_down=NA, wilcox_up=NA,
+                        cell_index=1:12)
+rownames(stat_data) = stat_data$cell
+
+# Statistical comparison using paired Wilcoxon criterion
+for (cell in unique(markers_melt$cell)) {
+  expr_cell <- aggregate(value~gene+exercise, 
+                         markers_melt[as.character(markers_melt$cell) ==
+                                        as.character(cell), ], median)
+  stat_data[cell, 'wilcox_down'] = wilcox.test(value~exercise, expr_cell, paired=T, alternative="greater")$p.value
+  stat_data[cell, 'wilcox_up'] = wilcox.test(value~exercise, expr_cell, paired=T, alternative="less")$p.value
+  print(paste0(cell, 
+               " - p (down) = ", 
+               wilcox.test(value~exercise, expr_cell, paired=T, alternative="greater")$p.value,
+               ", p (up) = ", 
+               wilcox.test(value~exercise, expr_cell, paired=T, alternative="less")$p.value))
+}
+
+stat_data$annotation = ifelse(stat_data$wilcox_up < 0.001 | stat_data$wilcox_down < 0.001, 
+                              "***", ifelse(stat_data$wilcox_up < 0.01 | stat_data$wilcox_down < 0.01,
+                                            "**", "-"))
+
+library(ggsignif)
+stat_data$x_start = stat_data$cell_index - 0.25
+stat_data$x_end = stat_data$cell_index + 0.25
+stat_data$y = 18
+
 ## boxplot of all markers, before and after exercise
-r1 <- ggplot(markers_melt,aes(x=cell,y=value,fill=exercise)) + geom_boxplot() + theme_bw() + 
-  scale_fill_manual(values = c("#587058","#FFD800")) + theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
-  ylab("Top 20 single cell markers") + xlab("cell type")
+r1_box <- ggplot(markers_melt,aes(x=cell,y=value)) + 
+  geom_violin(aes(fill=exercise), scale='width') + 
+  geom_signif(stat="identity", 
+              data=stat_data, 
+              aes(x=x_start, xend=x_end, 
+                  y=y, yend=y, annotation=annotation, group=cell_index)) +
+  geom_boxplot(aes(fill=exercise), width=0.2, outlier.shape=NA, position=position_dodge(width=0.9)) +
+  theme_bw() + scale_fill_manual(values = c("#587058","#FFD800")) + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
+  ylab("Top 20 single cell markers") + xlab("cell type") +
+  scale_y_continuous(limits=c(0, 20))
+r1_box
 
 markers_melt$group <- paste0(markers_melt$cell,markers_melt$gene)
 markers_melt$group <- as.factor(markers_melt$group)
@@ -587,6 +709,7 @@ r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() 
   scale_color_manual(values = c("#587058","#FFD800")) + scale_fill_manual(values = c("#587058","#FFD800")) + 
   theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
   ylab("Top 20 single cell markers") + xlab("cell type") + ggtitle("Expression changes of top 20 cell type specific markers")
+
 
 ## Let's now make a heatmap for all markers
 cell_types <- unique(cbat_markers$cell)
@@ -604,16 +727,26 @@ for (i in cell_types) {
                      annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
 }
 
-r2 <- wrap_elements(grid::textGrob('Unchanged')) + hmap[["erythrocyte"]] + 
-  hmap[["CD16_monocyte"]] + hmap[["Bcell"]] + hmap[["CD4_memory_Tcell"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
-r3 <- wrap_elements(grid::textGrob('Decreased')) + hmap[["CD4_naive_Tcell"]] + 
-  hmap[["CD8_Tcell"]] + hmap[["natural_killer"]] + hmap[["dendritic_cell"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
-r4 <- wrap_elements(grid::textGrob('Increased')) + hmap[["neutrophil"]] + 
-  hmap[["CD14_monocyte"]] + hmap[["platelet"]] + plot_spacer() + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
+r2 <- wrap_elements(grid::textGrob('Increased')) + hmap[["erythrocyte"]] + 
+  hmap[["CD14_monocyte"]] + hmap[["neutrophil"]] + hmap[['platelet']] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
+r3 <- wrap_elements(grid::textGrob('Decreased')) + hmap[["CD4_memory_Tcell"]] + 
+  hmap[["CD8_Tcell"]] + hmap[["Bcell"]] + hmap[["natural_killer"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
+r4 <- wrap_elements(grid::textGrob('Unchanged')) + hmap[["CD4_naive_Tcell"]] + 
+  hmap[["CD16_monocyte"]] + hmap[["myeloid_dendritic"]] + hmap[["plasmacytoid_dendritic"]] + plot_layout(ncol = 5, widths = c(1,3,3,3,3))
 
 
-## Patchwork figure 3, 15 x 18. TODO: sort cells by unchanged/dec/inc. 
-r1/r2/r3/r4
+r1 <- ggplot(markers_melt,aes(x = cell,y = value,fill = exercise)) + theme_bw() + 
+  geom_path(position=position_dodge(1),group = markers_melt$group, size = 0.1) + 
+  geom_point(aes(color = exercise), colour="black",pch = 21,stroke = 0.2, position=position_dodge(1), size = 2) + 
+  scale_color_manual(values = c("#587058","#FFD800")) + scale_fill_manual(values = c("#587058","#FFD800")) + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
+  ylab("Top 20 single cell markers") + xlab("cell type") + ggtitle("Expression changes of top 20 cell type specific markers")
+
+
+##   geom_boxplot(width = 0.6,position=position_dodge(1)) + 
+cairo_pdf('Figure_3_revamp.pdf', width=18, height=15)
+plot_grid(r1_box, r2, r3, r4, nrow=4, rel_heights = c(1, 0.8, 0.8, 0.8))
+dev.off()
 
 ################################## PART6. Annotate and plot more "array-filtered" genes ########################
 
@@ -625,24 +758,24 @@ head(filtered)
 table(all_top20_markers$cell)
 filt_ann <- filtered
 filt_ann$cell <- "Unknown"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "1",]$gene] <- "CD4_naive_Tcell"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "2",]$gene] <- "CD4_memory_Tcell"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "3",]$gene] <- "CD8_Tcell"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "4",]$gene] <- "natural_killer"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "5",]$gene] <- "Bcell"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "6",]$gene] <- "CD16_monocyte"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "7",]$gene] <- "dendritic_cell"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "8",]$gene] <- "platelet"
-filt_ann$cell[filt_ann$Symbol %in% pbmc.markers[pbmc.markers$cluster == "0",]$gene] <- "CD14_monocyte"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "1",]$gene] <- "CD4_naive_Tcell"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "2",]$gene] <- "CD4_memory_Tcell"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "3",]$gene] <- "CD8_Tcell"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "4",]$gene] <- "Bcell"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "5",]$gene] <- "natural_killer"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "6",]$gene] <- "CD16_monocyte"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "8",]$gene] <- "plasmacytoid_dendritic"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "9",]$gene] <- "myeloid_dendritic"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "7",]$gene] <- "platelet"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "0",]$gene] <- "CD14_monocyte"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "10",]$gene] <- "erythrocyte"
+filt_ann$cell[filt_ann$Symbol %in% all.uq.markers[all.uq.markers$cluster == "11",]$gene] <- "neutrophil"
 
 
 filt_ann$cell[filt_ann$Symbol %in% wb.markers[wb.markers$cluster == "0",]$gene] <- "erythrocyte"
 filt_ann$cell[filt_ann$Symbol %in% wb.markers[wb.markers$cluster == "6",]$gene] <- "neutrophil"
 table(filt_ann$cell)
 write.table(filt_ann,"Full_filtered_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
-
-
-write.table(filt_label2,"Array_filtered_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
 
 filt_label <- subset(filtered, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
 
@@ -658,6 +791,9 @@ table(res_array$filter)
 filt_label2 <- subset(filtered, Mean_TPM > 5)
 filt_label2 <- subset(filt_label2, padj < 1e-4 | abs(log2FoldChange) >= 0.5)
 filt_label2 <- filt_label2[! grepl("-",filt_label2$Symbol),] ## don't want -AS* etc
+
+write.table(filt_label2,"Array_filtered_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
+
 
 ## select protein coding genes for heatmap vis
 filt_label3 <- subset(filt_ann, Mean_TPM > 10 & abs(log2FoldChange) >= 0.5 & Gene_type == "protein_coding")
@@ -717,113 +853,234 @@ s3 <- as.ggplot(pheatmap(marker_exp,cluster_rows = F,annotation_col = sorted_con
                    annotation_names_row = F, annotation_names_col = F,
                    annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
 
+markers_matrix <- as.matrix(marker_exp)
+scaled_matrix = (markers_matrix - rowMeans(markers_matrix))/apply(markers_matrix, 1, sd)
+
+column_ha = ComplexHeatmap::HeatmapAnnotation(exercise = sorted_cond$exercise,
+                      simple_anno_size = unit(0.4, "cm"),
+                      col = list(exercise = c(after = "#FFD800",before = "#587058")))
+
+all_colors <- colorRampPalette(rev(RColorBrewer::brewer.pal(n = 7, name = "RdYlBu")))(100)
+bar_color = sapply(log10(sorted_tpms$Mean_TPM - min(sorted_tpms$Mean_TPM))/
+                   log10(max(sorted_tpms$Mean_TPM) - min(sorted_tpms$Mean_TPM)),
+            function(x) all_colors[ceiling(x * 100)][1])
+factor_colors = c("TPM > 10" = "#fef0d9", "TPM > 50" = "#fdcc8a", "TPM > 100" = "#fc8d59","TPM > 500" = "#d7301f")
+bar_factor_color = sapply(as.character(sorted_tpms$Exp),
+                  function(x) factor_colors[x])
+names(bar_factor_color) <- NULL
+row_colors = list("cell" = rev(c(RColorBrewer::brewer.pal(n=12, name="Set3"), '#00d65c')))
+names(row_colors['cell'][[1]]) = unique(filt_ann$cell)
+
+row_ha = ComplexHeatmap::rowAnnotation(cell = sorted_rows$celltype,
+            logtpm = ComplexHeatmap::anno_barplot(log10(sorted_tpms$Mean_TPM),
+              width = unit(2, "cm"), gp=gpar(fill=bar_factor_color)),
+            simple_anno_size = unit(0.5, "cm"), col=row_colors)
+chmap <- ComplexHeatmap::Heatmap(scaled_matrix, name = "mat", 
+        top_annotation = column_ha, right_annotation = row_ha,
+        cluster_rows = F, cluster_columns = F, 
+        row_split = sorted_rows$celltype, show_column_names = F, row_title = NULL, 
+        col = colorRampPalette(rev(RColorBrewer::brewer.pal(n = 7, name = "RdYlBu")))(100),
+        row_names_gp = gpar(fontsize = 8), rect_gp = gpar(col = "white", lwd = 1))
+chmap
+s3_ch <- as.ggplot(chmap)
+
+
+cairo_pdf('Figure_4_revamp.pdf', width=21, height=9)
+plot_grid(s1, s3_ch, nrow=1, rel_widths = c(1.1, 1))
+dev.off()
+
 ## patchwork figure4, 10 x 20 exp
 s23 <- s2 + s3 + plot_layout(widths = c(1,5))
 s1 + s23
 
-################################## PART7. Metabolic network ########################
+# Computing the enrichment of markers in DEGs and unique DEGs
+degs_rnaseq <- rbind(rnaseq_up, rnaseq_dn)
+high_degs_rnaseq <- subset(degs_rnaseq, Mean_TPM > 10 & Gene_type == "protein_coding" & abs(log2FoldChange) >= 0.5)
 
-library(mwcsr)
-library(gatom)
-library(data.table)
-library(igraph)
+marker_enrich <- data.frame(cell = unique(all_top20_markers$cell),
+                            cluster_id = c('10', '11', '0', '6', '1', '2',
+                                           '3', '5', '4', '9', '8', '7'))
+total_markers = c()
+deg_markers = c()
+high_deg_markers = c()
+uq_deg_markers = c()
+high_uq_deg_markers = c()
+deg_vs_all = c()
+uq_vs_deg = c()
+uq_high_vs_all_high = c()
 
-res_df        <- as.data.frame(res_full)
-res_df$ID     <- rownames(res_df)
-de_gatom      <- res_df[,c(7,6,2,1)]
-colnames(de_gatom) <- c("ID","pval","log2FC","baseMean")
-rownames(de_gatom) <- 1:nrow(de_gatom)
-de_gatom  <- de_gatom[complete.cases(de_gatom),]
+for (i in 1:12) {
+  this_cell = marker_enrich$cell[i]
+  this_cluster = marker_enrich$cluster_id[i]
+  markers = all.uq.markers$gene[all.uq.markers$cluster == this_cluster]
+  total.n = length(markers)
+  total.N = nrow(res_tpm)
+  uq.deg.n = ifelse(this_cell %in% unique(filt_ann$cell),
+                          table(filt_ann$cell)[this_cell],
+                          0)
+  uq.deg.N = nrow(filt_ann)
+  uq.high.deg.n = ifelse(this_cell %in% unique(sorted_rows$celltype),
+                         table(sorted_rows$celltype)[this_cell],
+                         0)
+  uq.high.deg.N = nrow(sorted_rows)
+  deg.n = sum(degs_rnaseq$Symbol %in% markers)
+  deg.N = nrow(degs_rnaseq)
+  high.deg.n = sum(high_degs_rnaseq$Symbol %in% markers)
+  high.deg.N = nrow(high_degs_rnaseq)
+  total_markers = c(total_markers, total.n)
+  deg_markers = c(deg_markers, deg.n)
+  high_deg_markers = c(high_deg_markers, high.deg.n)
+  uq_deg_markers = c(uq_deg_markers, uq.deg.n)
+  high_uq_deg_markers = c(high_uq_deg_markers, uq.high.deg.n)
+  deg_matrix <- matrix(c(deg.n, total.n - deg.n,
+                         deg.N, total.N - deg.N), nrow=2, byrow=T)
+  uq_vs_deg_matrix <- matrix(c(uq.deg.n, deg.n - uq.deg.n,
+                             uq.deg.N, deg.N - uq.deg.N), nrow=2, byrow=T)
+  uq_high_vs_deg_high_matrix <- matrix(c(uq.high.deg.n, high.deg.n - uq.high.deg.n,
+                              uq.high.deg.N, high.deg.N - uq.high.deg.N), nrow=2, byrow=T)
+  deg_vs_all = c(deg_vs_all, fisher.test(deg_matrix, alternative = "greater")$p.value)
+  uq_vs_deg = c(uq_vs_deg, fisher.test(uq_vs_deg_matrix, alternative = "greater")$p.value)
+  uq_high_vs_all_high = c(uq_high_vs_all_high, fisher.test(uq_high_vs_deg_high_matrix, alternative = "greater")$p.value)
+}
+marker_enrich$total_markers = total_markers
+marker_enrich$deg_markers = deg_markers
+marker_enrich$high_deg_markers = high_deg_markers
+marker_enrich$uq_deg_markers = uq_deg_markers
+marker_enrich$high_uq_deg_markers = high_uq_deg_markers
+marker_enrich$deg_vs_all = deg_vs_all
+marker_enrich$uq_vs_deg = uq_vs_deg
+marker_enrich$uq_high_vs_all_high = uq_high_vs_all_high
 
-load(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/network.rda"))
-load(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Hs.eg.gatom.anno.rda"))
-load(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/met.kegg.db.rda"))
+marker_enrich
+write.table(marker_enrich, file='cell_type_enrich_stats.tsv', sep='\t',
+            row.names=F, quote=F)
 
-g <- makeAtomGraph(network = network,org.gatom.anno = org.Hs.eg.gatom.anno,
-                   gene.de = de_gatom,met.db = met.kegg.db,met.de = NULL)
-gs1 <- scoreGraph(g, k.gene = 50, k.met = NULL)
-gs2 <- scoreGraph(g, k.gene = 75, k.met = NULL)
-gs3 <- scoreGraph(g, k.gene = 150, k.met = NULL)
+marker_enrich$non_deg <- marker_enrich$total_markers - marker_enrich$deg_markers
+marker_enrich$non_uq_deg <- marker_enrich$deg_markers - marker_enrich$uq_deg_markers
+enrich_melt <- reshape2::melt(marker_enrich, id.vars = c('cell'),
+            measure.vars=c('non_deg', 'non_uq_deg', 'uq_deg_markers'))
+enrich_melt$pct = enrich_melt$value/rep(marker_enrich$total_markers, 3)
+ggplot(enrich_melt, aes(x=cell, y=pct, fill=variable)) + 
+  geom_bar(stat='identity', col='black') +
+  theme_bw() + scale_fill_npg() + coord_flip()
 
-vhsolver <- virgo_solver(cplex_dir=NULL)               ## heuristic solver, needs Java 11 (conda install openjdk=11)
-vsolver  <- virgo_solver(cplex_dir="/home/jovyan/bin") ## exact solver
+circle_enrich <- reshape2::melt(marker_enrich, id.vars=c('cell'),
+    measure.vars=c('deg_markers', 'uq_deg_markers', 'high_uq_deg_markers'))
+circle_enrich$pct <- circle_enrich$value/c(marker_enrich$total_markers, 
+            marker_enrich$deg_markers, marker_enrich$high_deg_markers) * 100
+circle_enrich$pvalue = -log10(c(marker_enrich$deg_vs_all, 
+                                marker_enrich$uq_vs_deg,
+                                marker_enrich$uq_high_vs_all_high))
 
-res1 <- solve_mwcsp(vhsolver, gs1)
-res2 <- solve_mwcsp(vhsolver, gs2)
+circle_enrich$significance = factor(ifelse(circle_enrich$pvalue > 5, "p < 1e-5",
+                  ifelse(circle_enrich$pvalue > 3, "p < 0.001", "p > 0.001")),
+                  levels = c("p > 0.001", "p < 0.001", "p < 1e-5"))
 
-res1a <- solve_mwcsp(vsolver, gs1)
-res2a <- solve_mwcsp(vsolver, gs2)
-
-saveModuleToPdf(res1$graph, file="Skaters_k50.pdf", name="Skaters_k50", n_iter=100, force=1e-5, seed=1)
-saveModuleToPdf(res2$graph, file="Skaters_k75.pdf", name="Skaters_k75", n_iter=100, force=1e-5, seed=1)
-
-saveModuleToPdf(res1a$graph, file="Skaters_k50_opt.pdf", name="Skaters_k50", n_iter=100, force=1e-5, seed=1)
-saveModuleToPdf(res2a$graph, file="Skaters_k75_opt.pdf", name="Skaters_k75", n_iter=100, force=1e-5, seed=1)
-
-res1a.ext <- addHighlyExpressedEdges(res1a$graph, gs1)
-res2a.ext <- addHighlyExpressedEdges(res2a$graph, gs2)
-
-saveModuleToPdf(res1a.ext, file="Skaters_k50_ext.pdf", name="Skaters_k50", n_iter=1000, force=1e-5, seed=1)
-saveModuleToPdf(res2a.ext, file="Skaters_k75_ext.pdf", name="Skaters_k75", n_iter=1000, force=1e-5, seed=1)
-
-save.image(file = "skaters.RData")
-## load("skaters.RData")
-
-#### heatmap of DE transporters 
-
-res_cell <- res_tpm
-res_cell$cell <- "Unknown"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "1",]$gene] <- "CD4_naive_Tcell"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "2",]$gene] <- "CD4_memory_Tcell"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "3",]$gene] <- "CD8_Tcell"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "4",]$gene] <- "natural_killer"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "5",]$gene] <- "Bcell"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "6",]$gene] <- "CD16_monocyte"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "7",]$gene] <- "dendritic_cell"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "8",]$gene] <- "platelet"
-res_cell$cell[res_cell$Symbol %in% pbmc.markers[pbmc.markers$cluster == "0",]$gene] <- "CD14_monocyte"
-
-
-res_cell$cell[res_cell$Symbol %in% wb.markers[wb.markers$cluster == "0",]$gene] <- "erythrocyte"
-res_cell$cell[res_cell$Symbol %in% wb.markers[wb.markers$cluster == "6",]$gene] <- "neutrophil"
-table(res_cell$cell)
-
-slc_cell <- res_cell[grepl("^SLC",res_cell$Symbol),]
-slc_cell <- slc_cell[slc_cell$padj <= 0.1 & slc_cell$Mean_TPM >= 10,]
-
-slc_exp <- top18k_ann[top18k_ann$Symbol %in% slc_cell$Symbol,]
-rownames(slc_exp) <- slc_exp$Symbol
-slc_exp[,1:3] <- NULL
-slc_exp <- slc_exp[,rownames(sorted_cond)]
-
-slc_rows <- slc_cell[,c(2,12,5,9)]
-rownames(slc_rows) <- slc_rows$Symbol
-slc_rows$Symbol <- NULL
-
-## Order by cell type and then by log fold change
-slc_rows <- slc_rows[order(slc_rows$cell,slc_rows$log2FoldChange,decreasing = T),]
-slc_exp <- slc_exp[rownames(slc_exp),]
-write.table(slc_cell,"SLC_celltype_de.tsv",quote = F,row.names = F,sep = "\t")
-
-## Adjust dataframes a bit more 
-slc_tpms <- slc_rows[,3,drop = F]
-slc_tpms$Symbol <- rownames(slc_tpms)
-slc_tpms[,2:3] <- NULL
-colnames(slc_tpms) <- "celltype"
-
-sorted_tpms$Exp <- "TPM > 10"
-sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 50] <- "TPM > 50"
-sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 100] <- "TPM > 100"
-sorted_tpms$Exp[sorted_tpms$Mean_TPM >= 500] <- "TPM > 500"
-
-table(sorted_tpms$Exp)
-sorted_tpms$Exp <- factor(sorted_tpms$Exp,levels = c("TPM > 10","TPM > 50","TPM > 100","TPM > 500"))
-sorted_tpms$Symbol <- factor(sorted_tpms$Symbol,levels = rev(sorted_tpms$Symbol)) 
+head(circle_enrich)
+#circle_plot <- ggplot(circle_enrich, aes(x=cell, y=variable, size=pct)) + 
+#  geom_point(aes(fill=pvalue), pch=21, col='black') + 
+#  scale_fill_gradientn(colours=white_red_colors) +
+#  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1),
+#                     legend.position='bottom')
 
 
+circle_plot <- ggplot(circle_enrich, aes(x=cell, y=variable, size=pct)) + 
+  geom_point(aes(fill=significance), pch=21, col='black') + 
+  scale_fill_manual(values=c("#fef0d9", "#fc8d59", "#d7301f")) +
+  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1),
+                     panel.grid=element_blank(),
+                     plot.margin = margin(0.6, 2, 0.6, 0.2, "cm"))
 
-as.ggplot(pheatmap(marker_exp,cluster_rows = F,annotation_col = sorted_cond,annotation_row = sorted_rows, 
-                         cluster_cols = F,scale = "row",labels_col = "", fontsize_row = 9,
-                         legend = F,annotation_legend = T,border_color = "white", gaps_row = c(27,34,50,56,57,58,59,62,71,72),
-                         annotation_names_row = F, annotation_names_col = F,
-                         annotation_colors = list(exercise = c(after = "#FFD800",before = "#587058"))))
+print(circle_plot)
+
+circle_plot_count <- ggplot(circle_enrich, aes(x=cell, y=variable, size=value)) + 
+  geom_point(aes(fill=pvalue), pch=21, col='black') + 
+  scale_fill_gradientn(colours=white_red_colors) +
+  theme_bw() + theme(axis.text.x=element_text(angle=45, hjust=1))
+
+# Enrichment complex heatmap
+enrich_matrix <- -log10(as.matrix(marker_enrich[, 8:9]))
+rownames(enrich_matrix) = marker_enrich$cell
+colnames(enrich_matrix) = colnames(marker_enrich)[8:9]
+
+gene_count_matrix <- as.matrix(marker_enrich[, c(11, 12, 6)])
+gene_count_matrix <- gene_count_matrix/rowSums(gene_count_matrix)
+rownames(gene_count_matrix) <- marker_enrich$cell
+
+white_red_colors <- colorRampPalette(c('white', 'red'))(100)
+
+enrich_ha <- ComplexHeatmap::rowAnnotation(marker_pct = 
+      ComplexHeatmap::anno_barplot(gene_count_matrix, gp = gpar(fill = 2:4), 
+      bar_width = 1, width = unit(13.5, "cm")))
+
+s4_ch <- ComplexHeatmap::Heatmap(enrich_matrix, name = "mat",
+                        cluster_rows=F, cluster_columns = F,
+#                        col = colorRamps::matlab.like2(100),
+                        col = colorRampPalette(RColorBrewer::brewer.pal(n = 7, name = "YlOrRd"))(100), 
+                        rect_gp = gpar(col = "black", lwd = 1),
+                        row_names_side = "left",
+                        right_annotation = enrich_ha,
+                        width=unit(2, "cm"), height=unit(9.5, "cm"),
+                        row_names_gp = gpar(fontsize = 10),
+                        column_names_gp = gpar(fontsize = 10),
+                        column_names_side = "top")
+s4_ch
+
+top <- plot_grid(s1, s3_ch, ncol=2, rel_widths = c(1.1, 1))
+bottom <- plot_grid(as.ggplot(s4_ch), plot_spacer() + theme_minimal(), rel_widths=c(1.1, 1))
+
+cairo_pdf('Figure_4_revamp2.pdf', width=21, height=15)
+plot_grid(top, bottom, nrow=2, rel_heights = c(1, 0.6))
+dev.off()
+
+first_2col <- plot_grid(s1, as.ggplot(s4_ch), ncol=1, rel_heights=c(1, 0.8))
+cairo_pdf('Figure_4_revamp3.pdf', width=21, height=13)
+plot_grid(first_2col, s3_ch, nrow=1, rel_widths = c(1.1, 1))
+dev.off()
+
+second_2col <- plot_grid(s1, circle_plot, ncol=1, rel_heights=c(1, 0.36))
+cairo_pdf('Figure_4_revamp4.pdf', width=21, height=11.4)
+plot_grid(second_2col, s3_ch, nrow=1, rel_widths = c(1.1, 1))
+dev.off()
+
+################ correlation plot for peer review
+
+rsem_exp      <- read.table("rsem.genes.counts.tsv", header = T, row.names = 1, check.names = F)
+tt <- read.table("SRR13442895_STAR2.7.10a_gencode_v39.tsv",header = T) ## v39 and new STAR, matches sample 1-before (GSM5022469)
+rownames(tt) <- gsub("\\.\\d+","",tt$gene_id)
+tt2 <- tt[,5,drop = F]
+qq2 <- rsem_exp[,4,drop = F]
+dim(tt2)
+dim(qq2)
+merged <- merge(tt2,qq2,by=0)
+dim(merged)
+head(merged)
+rownames(merged) <- merged$Row.names
+merged$Row.names <- NULL
+colnames(merged) <- c("v39_new_STAR","v26_old_STAR")
+colSums(merged)
+
+
+cor(merged$v39_new_STAR,merged$v26_old_STAR)
+ggplot(merged, aes(x=v39_new_STAR, y=v26_old_STAR)) + geom_point() + theme_bw() + 
+  # scale_x_continuous(trans='log2') + scale_y_continuous(trans='log2') + 
+  geom_abline(intercept=0, color="red", size=0.5) + 
+  annotate("text", size=7, label = "Correlation = 0.9995744", x = 72000, y = 300000) + 
+  annotate("text", size=7, label = "R^2 = 0.999149", x = 50000, y = 250000) + 
+  theme(axis.text=element_text(size=16), axis.title=element_text(size=16))
+
+tt2_res <- tt2[! rownames(tt2) %in% rownames(merged),,drop = F]
+head(tt2_res)
+colSums(tt2_res)
+qq2_res <- qq2[! rownames(qq2) %in% rownames(merged),,drop = F]
+colSums(qq2_res)
+dim(qq2_res)
+colSums(merged)
+
+pct1 <- 100*46638.54/24177872
+pct2 <- 100*17363.59/24177872
+
+pct1
+pct2
+
+
